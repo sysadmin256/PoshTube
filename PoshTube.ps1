@@ -12,11 +12,8 @@ Function Get-YoutubeCode
     Return $response 
 }
 
-Function Step2 
+Function Get-SigninCode 
 {
-    <#
-    Gets the initial device request code from Google's API.
-    #>
     Param (
         $ClientID,
         $ClientSecret,
