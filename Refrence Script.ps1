@@ -3,7 +3,7 @@ $response = Invoke-RestMethod 'https://accounts.google.com/o/oauth2/device/code?
 $response #| ConvertTo-Json
 
 #Auth prompt for user
-$URI = "https://accounts.google.com/o/oauth2/token?client_id=265341207630-7mqm6fpa9u3fvq5tucf9i105o33v3sbs.apps.googleusercontent.com&client_secret=Z14UzYv5gIfJmRv890bVFm_w&code={0}&grant_type=http://oauth.net/grant_type/device/1.0" -f $Response.device_code
+$URI = "https://accounts.google.com/o/oauth2/token?client_id=265341207630-7mqm6fpa9u3fvq5tucf9i105o33v3sbs.apps.googleusercontent.com&client_secret=Z14UzYv5gIfJmRv890bVFm_w&code={0}&grant_type=http://oauth.net/grant_type/device/1.0" -f $DeviceCode.device_code
 $response1 = Invoke-RestMethod $URI -Method 'POST' -Headers $headers
 $response1 | ConvertTo-Json
 
