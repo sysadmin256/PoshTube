@@ -229,3 +229,27 @@ Param (
     $response
 
 }
+
+Function Set-CompanionButton
+{
+Param (
+    [Parameter(mandatory=$true)]
+    $Page,
+    [Parameter(mandatory=$true)]
+    $ButtonNumber,
+    $Text,
+    $BackColor,
+    $Color,
+    $Size,
+    $Address = "10.1.10.75:8888"
+)
+    $URI = "{0}/style/bank/{1}/{2}/?" -f $Address, $Page, $ButtonNumber
+    $Changes = @()
+    if ($Text) {$Changes += "text=$Text"}
+    if ($BackColor) {$Changes += "bgcolor=$BackColor"}
+    if ($Color) {$Changes += "color=$Color"}
+    if ($Size) {$Changes += "Size=$Size" + "px"}
+    $FullURI = "{0}{1}" -f $URI, $($Changes -join "&")
+    Invoke-WebRequest $FullURI 
+    #Invoke-WebRequest "10.1.10.75:8888/style/bank/2/15/?bgcolor=%23ffffff&color=%23000000"
+}
