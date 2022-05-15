@@ -1,4 +1,7 @@
-﻿Function Get-YoutubeCode 
+# Webroot API Ref for Oauth 2
+# https://github.com/christaylorcodes/WebrootUnity
+
+Function Get-YoutubeCode 
 {
     <#
     Gets the initial device request code from Google's API.
@@ -106,12 +109,29 @@ Param (
 Function Save-AuthToken 
 {
 Param (
+    [ValidateScript({
+            test-json -TestJson $_
+        })]
     [string]$token
 )
     if (-not (test-path "C:\ProgramData\PoshTube")) {
         New-Item "C:\ProgramData\PoshTube" -ItemType Directory -Force
     }
     $Token | ConvertTo-SecureString -AsPlainText -Force | convertfrom-securestring | out-file "C:\ProgramData\PoshTube\AuthToken.json"
+}
+
+Function Test-Json {
+Param (
+    $TestJson
+)
+    try {
+        $powershellRepresentation = ConvertFrom-Json $TestJson -ErrorAction Stop;
+        $validJson = $true;
+    } catch {
+        $validJson = $false;
+    }
+
+    return $validJson
 }
 
 Function Get-AuthToken 
@@ -132,7 +152,7 @@ Param (
     $ClientSecret = "Z14UzYv5gIfJmRv890bVFm_w"
 )
     $DeviceCode = Get-YoutubeCode -ClientID $ClientID
-    $DeviceCode
+    #$DeviceCode
 
     start-process "chrome.exe" -ArgumentList $($DeviceCode.verification_url)
 
@@ -140,7 +160,7 @@ Param (
 
     Add-Type -AssemblyName PresentationCore,PresentationFramework
     $msgBody = "Please enter this device code: `r`n{0} `r`n`r`nIt's also on the clipboard." -f $DeviceCode.User_Code
-    [System.Windows.MessageBox]::Show($msgBody)
+    [System.Windows.MessageBox]::Show($msgBody) | Out-Null
 
     $Counter = 0
     do {
@@ -174,7 +194,7 @@ Param (
     if ($SetLive -eq "Fail") {
         $RefreshedTokenJson = Get-RefreshToken -ClientID $ClientID -ClientSecret $ClientSecret -RefreshToken $AuthToken.refresh_token
         if ($RefreshedTokenJson -eq "Fail") {
-            New-PoshTubeAuth
+            $AuthTokenJson = New-PoshTubeAuth
             $AuthToken = $AuthTokenJson | ConvertFrom-Json
             $SetLive = Set-LiveStream -Access_Token $AuthToken.access_token
         }
@@ -188,8 +208,15 @@ Param (
         Throw "Unable to complete the request.  Please setup the stream manually"
     }
     Set-VideoMeta -ID $SetLive.id -Title $SetLive.snippet.title -Access_token $AuthToken.access_token 
+    if ($SetLive -ne "Fail") {
+        $SetLive | Export-Clixml -Depth 10 -Path "C:\ProgramData\PoshTube\Live.txt" 
+        Set-CompanionButton -Page 2 -ButtonNumber 12 -BackColor Green
+        Set-CompanionButton -Page 2 -ButtonNumber 13 -BackColor Black
+        Set-CompanionButton -Page 2 -ButtonNumber 14 -BackColor Black
+        Set-CompanionButton -Page 2 -ButtonNumber 15 -BackColor Black
+    }
     return $SetLive
-
+    
 }
 
 Function Set-VideoMeta
@@ -240,16 +267,157 @@ Param (
     $Text,
     $BackColor,
     $Color,
+    [validateset("7","14","18","24","30","44","Auto")]
     $Size,
     $Address = "10.1.10.75:8888"
 )
+$Colors = @{
+    Black = "000000"
+    White = "ffffff"
+    Red = "fc0303"
+    Yellow = "fcf403"
+    Green = "03fc28"
+    Blue = "03befc"
+}
     $URI = "{0}/style/bank/{1}/{2}/?" -f $Address, $Page, $ButtonNumber
     $Changes = @()
     if ($Text) {$Changes += "text=$Text"}
-    if ($BackColor) {$Changes += "bgcolor=$BackColor"}
-    if ($Color) {$Changes += "color=$Color"}
-    if ($Size) {$Changes += "Size=$Size" + "px"}
+    if ($BackColor) {
+        if ($BackColor -in $Colors.GetEnumerator().Name) {
+            $Changes += "bgcolor=$($Colors[$BackColor])"
+        } else {
+            $Changes += "bgcolor=$BackColor"
+        }
+    }
+    if ($Color) {
+        if ($Color -in $Colors.GetEnumerator().Name) {
+            $Changes += "color=$($Colors[$BackColor])"
+        }
+    } else {
+        $Changes += "color=$Color"
+    }
+    if ($Size) {$Changes += "Size=$Size" + "pt"}
     $FullURI = "{0}{1}" -f $URI, $($Changes -join "&")
     Invoke-WebRequest $FullURI 
-    #Invoke-WebRequest "10.1.10.75:8888/style/bank/2/15/?bgcolor=%23ffffff&color=%23000000"
+    #Invoke-WebRequest "10.1.10.75:8888/style/bank/2/15/?bgcolor=%23fc0303&color=%23000000"
+}
+
+Function Get-LiveBroadcastStatus
+{
+Param (
+    [Parameter(Mandatory=$True)]
+    $ID,
+    [Parameter(Mandatory=$True)]
+    $Access_token
+)
+    $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
+    $AccessToken = "Bearer {0}" -f $Access_token
+    $headers.Add("Authorization", $AccessToken)
+    $headers.Add("Content-Type", "application/json")
+
+    
+    try {
+        $response = Invoke-RestMethod "https://youtube.googleapis.com/youtube/v3/liveBroadcasts?part=snippet%2CcontentDetails%2Cstatus&id=$ID" -Method 'Get' -Headers $headers -ErrorAction Stop -ErrorVariable Error1
+        Return $response.items[0].status.lifeCycleStatus
+    } 
+    Catch {
+        Return "fail"
+    }
+    
+}
+
+Function Set-LiveBroadcastStatus
+{
+Param (
+    [Parameter(Mandatory=$True)]
+    $ID,
+    [Parameter(Mandatory=$True)]
+    [ValidateSet("testing","live","complete")]
+    $Status,
+    [Parameter(Mandatory=$True)]
+    $Access_token
+)
+    $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
+    $AccessToken = "Bearer {0}" -f $Access_token
+    $headers.Add("Authorization", $AccessToken)
+    $headers.Add("Content-Type", "application/json")
+
+    
+    $response = Invoke-RestMethod "https://youtube.googleapis.com/youtube/v3/liveBroadcasts/transition?broadcastStatus=$Status&id=$ID&part=id&part=status" -Method 'Post' -Headers $headers -ErrorAction Stop -ErrorVariable Error1
+    $Status = $response.status.lifeCycleStatus
+    Return $Status
+
+}
+
+Function Refresh-LiveBroadcastStatus
+{
+Param (
+    $ID,
+    $Access_token
+)
+    $Status = Get-LiveBroadcastStatus -ID $ID -Access_token $Access_token 
+
+    Set-CompanionButton -Page 2 -ButtonNumber 12 -BackColor Black
+    Set-CompanionButton -Page 2 -ButtonNumber 13 -BackColor Black
+    Set-CompanionButton -Page 2 -ButtonNumber 14 -BackColor Black
+    Set-CompanionButton -Page 2 -ButtonNumber 15 -BackColor Black
+    switch ($Status) {
+        {$_ -eq "created"} {$ButtonNumber = "12"}
+        {$_ -eq "testing"} {$ButtonNumber = "13"}
+        {$_ -eq "live"} {$ButtonNumber = "14"}
+        {$_ -eq "Complete"} {$ButtonNumber = "15"}
+    }   
+    Set-CompanionButton -Page 2 -ButtonNumber $ButtonNumber -BackColor Green
+    Set-CompanionButton -Page 2 -ButtonNumber 16 -Text $Status
+}
+
+Function Invoke-PoshTubeAction 
+{
+Param (
+    [Parameter(mandatory=$true)]
+    [validateset("GetStatus","SetStatus","RefreshStatus")]
+    $Action,
+    [ValidateSet("testing","live","complete")]
+    $Status
+)
+    $LiveInfo = Import-Clixml -Path "C:\programData\PoshTube\Live.txt"
+
+    $AuthTokenJson = Get-AuthToken
+    if ($AuthTokenJson -eq "Fail") {
+        $AuthTokenJson = New-PoshTubeAuth
+    }
+    $AuthToken = $AuthTokenJson | ConvertFrom-Json
+    switch ($Action) {
+        {$_ -eq "GetStatus"} {$SetLive = Get-LiveBroadcastStatus -ID $LiveInfo.id -Access_token $AuthToken.access_token}
+        {$_ -eq "SetStatus"} {$SetLive = Set-LiveBroadcastStatus -ID $LiveInfo.Id -Access_token $AuthToken.access_token -Status $Status}
+        {$_ -eq "RefreshStatus"} {$SetLive = Refresh-LiveBroadcastStatus  -ID $LiveInfo.Id -Access_token $AuthToken.access_token}
+    }
+    if ($SetLive -eq "Fail") {
+        $RefreshedTokenJson = Get-RefreshToken -ClientID $ClientID -ClientSecret $ClientSecret -RefreshToken $AuthToken.refresh_token
+        if ($RefreshedTokenJson -eq "Fail") {
+            New-PoshTubeAuth
+            $AuthToken = $AuthTokenJson | ConvertFrom-Json
+            switch ($Action) {
+                {$_ -eq "GetStatus"} {$SetLive = Get-LiveBroadcastStatus -ID $LiveInfo.id -Access_token $AuthToken.access_token}
+                {$_ -eq "SetStatus"} {$SetLive = Set-LiveBroadcastStatus -ID $LiveInfo.Id -Access_token $AuthToken -Status $Status.access_token}
+                {$_ -eq "RefreshStatus"} {$SetLive = Refresh-LiveBroadcastStatus -ID $LiveInfo.Id -Access_token $AuthToken.access_token}
+            }
+        }
+        else {
+            Save-AuthToken -token $RefreshedTokenJson
+            $AuthToken = $RefreshedTokenJson | ConvertFrom-Json
+            switch ($Action) {
+                {$_ -eq "GetStatus"} {$SetLive = Get-LiveBroadcastStatus -ID $LiveInfo.id -Access_token $AuthToken.access_token}
+                {$_ -eq "SetStatus"} {$SetLive = Set-LiveBroadcastStatus -ID $LiveInfo.Id -Access_token $AuthToken -Status $Status.access_token}
+                {$_ -eq "RefreshStatus"} {$SetLive = Refresh-LiveBroadcastStatus  -ID $LiveInfo.Id -Access_token $AuthToken.access_token}
+            } 
+        }
+    }
+    if ($SetLive -eq "Fail") {
+        Throw "Unable to complete the request.  Please setup the stream manually"
+    }
+    write-host "ID: $ID"
+    Write-Host "Access_Token: $($AuthToken.access_token)"
+    Return $SetLive
+
 }
